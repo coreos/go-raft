@@ -5,7 +5,7 @@ import (
 	"code.google.com/p/goprotobuf/proto"
 	"errors"
 	"fmt"
-	"github.com/goraft/raft/protobuf"
+	"github.com/coreos/go-raft/protobuf"
 	"io"
 	"os"
 	"sync"
