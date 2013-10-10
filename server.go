@@ -186,6 +186,11 @@ func (s *Server) Context() interface{} {
 	return s.context
 }
 
+// Retrieves the state machine passed into the constructor.
+func (s *Server) StateMachine() StateMachine {
+	return s.stateMachine
+}
+
 // Retrieves the log path for the server.
 func (s *Server) LogPath() string {
 	return path.Join(s.path, "log")
@@ -849,7 +854,7 @@ func (s *Server) processAppendEntriesResponse(resp *AppendEntriesResponse) {
 	for _, peer := range s.peers {
 		indices = append(indices, peer.getPrevLogIndex())
 	}
-	sort.Sort(uint64Slice(indices))
+	sort.Sort(sort.Reverse(uint64Slice(indices)))
 
 	// We can commit up to the index which the majority of the members have appended.
 	commitIndex := indices[s.QuorumSize()-1]
