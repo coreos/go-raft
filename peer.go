@@ -20,6 +20,7 @@ type Peer struct {
 	mutex             sync.RWMutex
 	stopChan          chan bool
 	heartbeatInterval time.Duration
+	lastActivity      time.Time
 }
 
 //------------------------------------------------------------------------------
@@ -90,6 +91,11 @@ func (p *Peer) stopHeartbeat(flush bool) {
 	p.stopChan <- flush
 }
 
+// LastActivity returns the last time any response was received from the peer.
+func (p *Peer) LastActivity() time.Time {
+	return p.lastActivity
+}
+
 //--------------------------------------
 // Copying
 //--------------------------------------
@@ -103,6 +109,7 @@ func (p *Peer) clone() *Peer {
 		Name:             p.Name,
 		ConnectionString: p.ConnectionString,
 		prevLogIndex:     p.prevLogIndex,
+		lastActivity:     p.lastActivity,
 	}
 }
 
@@ -153,7 +160,7 @@ func (p *Peer) flush() {
 	if entries != nil {
 		p.sendAppendEntriesRequest(newAppendEntriesRequest(term, prevLogIndex, prevLogTerm, p.server.log.CommitIndex(), p.server.name, entries))
 	} else {
-		p.sendSnapshotRequest(newSnapshotRequest(p.server.name, p.server.lastSnapshot))
+		p.sendSnapshotRequest(newSnapshotRequest(p.server.name, p.server.snapshot))
 	}
 }
 
@@ -176,6 +183,7 @@ func (p *Peer) sendAppendEntriesRequest(req *AppendEntriesRequest) {
 
 	// If successful then update the previous log index.
 	p.mutex.Lock()
+	p.lastActivity = time.Now()
 	if resp.Success() {
 		if len(req.Entries) > 0 {
 			p.prevLogIndex = req.Entries[len(req.Entries)-1].GetIndex()
@@ -243,6 +251,7 @@ func (p *Peer) sendSnapshotRequest(req *SnapshotRequest) {
 
 	// If successful, the peer should have been to snapshot state
 	// Send it the snapshot!
+	p.lastActivity = time.Now()
 	if resp.Success {
 		p.sendSnapshotRecoveryRequest()
 	} else {
@@ -254,7 +263,7 @@ func (p *Peer) sendSnapshotRequest(req *SnapshotRequest) {
 
 // Sends an Snapshot Recovery request to the peer through the transport.
 func (p *Peer) sendSnapshotRecoveryRequest() {
-	req := newSnapshotRecoveryRequest(p.server.name, p.server.lastSnapshot)
+	req := newSnapshotRecoveryRequest(p.server.name, p.server.snapshot)
 	debugln("peer.snap.recovery.send: ", p.Name)
 	resp := p.server.Transporter().SendSnapshotRecoveryRequest(p.server, p, req)
 
@@ -263,6 +272,7 @@ func (p *Peer) sendSnapshotRecoveryRequest() {
 		return
 	}
 
+	p.lastActivity = time.Now()
 	if resp.Success {
 		p.prevLogIndex = req.LastIndex
 	} else {
@@ -283,6 +293,7 @@ func (p *Peer) sendVoteRequest(req *RequestVoteRequest, c chan *RequestVoteRespo
 	req.peer = p
 	if resp := p.server.Transporter().SendVoteRequest(p.server, p, req); resp != nil {
 		debugln("peer.vote.recv: ", p.server.Name(), "<-", p.Name)
+		p.lastActivity = time.Now()
 		resp.peer = p
 		c <- resp
 	} else {
